@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>游戏服务器连接测试</title>
+    <style>
+        body {
+            font-family: "Microsoft YaHei", sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        /* 添加按钮样式 */
+        .boss-buttons {
+            margin: 10 px 0;
+            display: flex;
+            gap: 8 px;
+            flex-wrap: wrap;
+        }
+
+        .boss-button {
+            padding: 8 px 15 px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4 px;
+            cursor: pointer;
+            transition: background 0.2 s;
+        }
+
+        .boss-button :hover {
+            background: #1976D2;
+        }
+
+        .status-box {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .user-info {
+            background: #e8f5e9;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 8px;
+            display: none;
+            justify-content: space-between;
+            border: 2px solid #c8e6c9;
+        }
+
+        .user-info span {
+            margin: 0 10px;
+            color: #2e7d32;
+        }
+
+        .disconnected {
+            background: #ffebee;
+            color: #c62828;
+            border: 2px solid #ffcdd2;
+        }
+
+        .connecting {
+            background: #fff3e0;
+            color: #ef6c00;
+            border: 2px solid #ffe0b2;
+        }
+
+        .connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 2px solid #c8e6c9;
+        }
+
+        .login-form {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #messages {
+            height: 300px;
+            border: 1px solid #eee;
+            padding: 15px;
+            background: white;
+            overflow-y: auto;
+            border-radius: 6px;
+            margin-top: 15px;
+        }
+
+        .message-item {
+            margin: 8px 0;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>游戏服务器连接器</h1>
+
+    <div class="login-form">
+        <h3>登录凭证</h3>
+        <input type="text" id="username" placeholder="用户名">
+        <input type="password" id="password" placeholder="密码">
+        <button onclick="handleLogin()" id="loginBtn">登录服务器</button>
+    </div>
+
+    <div class="user-info" id="userInfo">
+        <span>用户: <strong id="user-id"></strong></span>
+        <span>职业: <strong id="user-career"></strong></span>
+        <span>血量: <strong id="user-hp"></strong></span>
+        <span>能量: <strong id="user-sp"></strong></span>
+        <span>攻击力: <strong id="user-attack"></strong></span>
+    </div>
+
+    <div id="status" class="status-box disconnected">未连接</div>
+
+    <div id="messages"></div>
+
+    <div>
+        <input type="text" id="messageInput" placeholder="输入聊天消息" disabled>
+        <button onclick="sendMessage()" id="sendBtn" disabled>发送</button>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <script>
+        let socket = null;
+        let isAuthenticated = false;
+        let reconnectAttempts = 0;
+        const MAX_RETRIES = 5;
+
+        function initSocketConnection() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+
+            socket = io('http://127.0.0.1:5300', {
+                transports: ['websocket'],
+                autoConnect: false,
+                auth: {
+                    userid: document.getElementById('username').value,
+                    token: ''
+                }
+            });
+
+            setupSocketEvents();
+        }
+
+        function setupSocketEvents() {
+            socket.on('connect', handleConnect);
+            socket.on('disconnect', handleDisconnect);
+            socket.on('connect_error', handleConnectError);
+            socket.on('login', handleLoginResponse);
+            socket.on('newMessage', handleNewMessage);
+            // 添加用户数据更新监听
+            socket.on('userUpdate', handleUserUpdate);
+        }
+
+        function handleLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                addSystemMessage('请输入完整的登录凭证');
+                return;
+            }
+
+            toggleLoginButton(false);
+            initSocketConnection();
+            socket.connect();
+        }
+
+        function handleLoginResponse(response) {
+            if (response.success) {
+                isAuthenticated = true;
+                socket.auth.token = response.token;
+                if (response.user) {
+                    updateUserInfo(response.user);
+                }
+
+                document.getElementById('userInfo').style.display = 'flex';
+                updateStatus('connected', `已认证连接 (${socket.id})`);
+                enableChatFeatures(true);
+                addSystemMessage('认证成功，欢迎进入游戏世界！');
+                reconnectAttempts = 0;
+            } else {
+                addSystemMessage(`登录失败: ${response.message}`);
+                socket.disconnect();
+                enableChatFeatures(false);
+                document.getElementById('userInfo').style.display = 'none';
+            }
+            toggleLoginButton(true);
+        }
+
+        function updateUserInfo(userData) {
+            document.getElementById('user-id').textContent = userData.userid;
+            if (userData.career) {
+                document.getElementById('user-career').textContent = userData.career.career;
+                document.getElementById('user-hp').textContent = userData.career.hp;
+                document.getElementById('user-sp').textContent = userData.career.sp;
+                document.getElementById('user-attack').textContent = userData.career.attack;
+            }
+
+        }
+
+        function handleConnect() {
+            updateStatus('connecting', '正在验证身份...');
+            addSystemMessage('传输层连接建立，正在验证凭证');
+            socket.emit('login', {
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            });
+        }
+
+        function handleDisconnect(reason) {
+            isAuthenticated = false;
+            updateStatus('disconnected', '连接已断开');
+            enableChatFeatures(false);
+            document.getElementById('userInfo').style.display = 'none';
+            addSystemMessage(`连接断开，原因: ${reason}`);
+
+            if (reconnectAttempts < MAX_RETRIES) {
+                setTimeout(() => {
+                    reconnectAttempts++;
+                    addSystemMessage(`尝试自动重连 (${reconnectAttempts}/${MAX_RETRIES})`);
+                    socket.connect();
+                }, 3000);
+            }
+        }
+        function handleUserUpdate(userData) {
+            updateUserInfo(userData);
+            addSystemMessage('角色状态已更新');
+        }
+        function handleConnectError(error) {
+            addSystemMessage(`连接错误: ${error.message}`);
+            console.error('Socket error:', error);
+        }
+
+        function handleNewMessage(msg) {
+            console.log("===服务器消息", msg);
+
+            const oldButtons = document.getElementById('bossButtonsContainer');
+            if (oldButtons) oldButtons.remove();
+            if (msg.type === "attack") {
+                handleUserUpdate(msg.message)
+            }
+            if (msg.type === "boss") {
+                const buttonContainer = document.createElement('div');
+                buttonContainer.id = 'bossButtonsContainer';
+                buttonContainer.className = 'boss-buttons';
+
+                const header = document.createElement('div');
+                header.textContent = '发现可攻击BOSS:';
+                header.style.marginBottom = '8px';
+                header.style.color = '#666';
+                buttonContainer.appendChild(header);
+
+                msg.message.forEach(boss => {
+                    const button = document.createElement('button');
+                    button.className = 'boss-button';
+                    button.textContent = `${boss.bossname} (血量 ${boss.hp})`;
+
+                    // 修改攻击请求数据格式
+                    button.onclick = () => {
+                        socket.emit('chatMessage', {
+                            type: 'attack',
+                            bossid: boss.id
+                        });
+                        addMessage(`你对 ${boss.bossname} 发起了攻击`);
+                    };
+
+                    buttonContainer.appendChild(button);
+                });
+
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.insertBefore(buttonContainer, messagesDiv.firstChild);
+            } else {
+                addMessage(`服务器: ${JSON.stringify(msg)}`);
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const msg = input.value.trim();
+
+            if (msg && isAuthenticated) {
+                socket.emit('chatMessage', msg);
+                addMessage(`你: ${msg}`);
+                input.value = '';
+            }
+        }
+
+        function updateStatus(status, text) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `${status} status-box`;
+            statusDiv.textContent = text;
+        }
+
+        function addSystemMessage(text) {
+            addMessage(`系统: ${text}`, true);
+        }
+
+        function addMessage(text, isSystem = false) {
+            const messagesDiv = document.getElementById('messages');
+            const p = document.createElement('div');
+            p.className = 'message-item' + (isSystem ? ' system-message' : '');
+            p.innerHTML = `
+                <span class="time">[${new Date().toLocaleTimeString()}]</span>
+                <span class="content">${text}</span>
+            `;
+            messagesDiv.appendChild(p);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function enableChatFeatures(enable) {
+            document.getElementById('messageInput').disabled = !enable;
+            document.getElementById('sendBtn').disabled = !enable;
+        }
+
+        function toggleLoginButton(enable) {
+            const btn = document.getElementById('loginBtn');
+            btn.disabled = !enable;
+            btn.textContent = enable ? '登录服务器' : '正在连接...';
+        }
+    </script>
+</body>
+
+</html>

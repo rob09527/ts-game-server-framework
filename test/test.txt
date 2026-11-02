@@ -1,0 +1,864 @@
+export interface Battle {
+    userid: number;
+    /** 战斗单位名称（用于战报输出） */
+    account: string;
+    /** 完整战斗属性集合 */
+    attribute: Attribute;
+}
+
+interface Attribute {
+    /** 生命值（整数）归零即死亡 */
+    hp: number;
+    /** 速度值决定先手 */
+    sp: number;
+    /** 基础攻击力（整数） */
+    attack: number;
+    /** 防御力（整数）直接抵消伤害 */
+    defense: number;
+    /** 暴击概率 [0-1] */
+    critRate: number;
+    /** 闪避概率 [0-1] */
+    dodge: number;
+    /** 固定连击概率 [0-1] */
+    combo: number;
+    /** 固定反击概率 [0-1] */
+    counter: number;
+    /** 击晕概率 [0-1] */
+    stunRate: number;
+    /** 吸血比例 [0-1] */
+    lifesteal: number;
+    /** 暴击伤害倍数（例:2.0=200%） */
+    critDmg: number;
+    /** 暴伤减免比例 [0-1] */
+    critDmgResist: number;
+    /** 全局增伤 [0-1] */
+    dmgBonus: number;
+    /** 全局减伤 [0-1] */
+    dmgReduce: number;
+    /** 治疗增强 [0-1] */
+    healBoost: number;
+    /** 治疗削弱 [0-1] */
+    healReduce: number;
+}
+/**
+ * 忍者战斗模拟器（v4.7 Final）
+ * 核心改进：
+ * 1. 固定概率系统（连击/反击不衰减）
+ * 2. 纯尾部击晕检测
+ * 3. 严格整数伤害计算
+ * 算法流程图：
+ * [攻速判定] → [连击阶段] → [反击检测] → [尾部击晕检测]
+ */
+export class Sekiro {
+    // 配置参数
+    public static config = {
+        maxCombo: 3 // 最大连击次数限制
+    };
+
+    /**
+     * 执行战斗流程
+     * @returns [战斗日志, 是否触发击晕] 
+     */
+    public static attackTarget(attacker: Battle, target: Battle): [string[], boolean] {
+        const combatLog: string[] = [];
+        let currentAttacker = attacker;
+        let currentTarget = target;
+        let comboCount = 0;
+
+        // 阶段1：先手判定
+        combatLog.push(this.generateSpeedLog(attacker, target));
+
+        // 阶段2：连击主循环
+        do {
+            const { logs, isCounter } = this.executeAttack(
+                currentAttacker,
+                currentTarget,
+                comboCount
+            );
+
+            combatLog.push(...logs);
+
+            // 阶段3：固定概率反击检测
+            if (isCounter) {
+                [currentAttacker, currentTarget] = [currentTarget, currentAttacker];
+                combatLog.push(`🔄 ${currentAttacker.account} 发起反击`);
+                comboCount = 0; // 重置连击计数器
+            }
+        } while (comboCount > 0);
+
+        // 阶段4：尾部击晕检测（不影响本次战斗流程）
+        const isStunned = Math.random() < attacker.attribute.stunRate;
+        combatLog.push(
+            isStunned ?
+                `💫 ${target.account} 被击晕标记` :
+                `⏳ 未触发击晕（概率 ${(attacker.attribute.stunRate * 100).toFixed(1)}%）`
+        );
+
+        return [combatLog, isStunned];
+    }
+
+    /**
+     * 执行单次攻击（含连击）
+     * @param comboCount 当前连击次数
+     */
+    private static executeAttack(
+        attacker: Battle,
+        target: Battle,
+        comboCount: number
+    ) {
+        const att = attacker.attribute;
+        const def = target.attribute;
+        const logs: string[] = [];
+        let hitCount = 0;
+
+        // 连击循环（固定概率检测）
+        while (hitCount < this.config.maxCombo) {
+            // 步骤1：闪避检测
+            if (Math.random() < def.dodge) {
+                logs.push(`❌ ${target.account} 闪避（概率 ${(def.dodge * 100).toFixed(1)}%）`);
+                break;
+            }
+
+            // 步骤2：整数伤害计算
+            let damage = Math.floor(att.attack * (1 + att.dmgBonus - def.dmgReduce));
+
+            // 步骤3：暴击计算
+            if (Math.random() < att.critRate) {
+                damage = Math.floor(damage * att.critDmg * (1 - def.critDmgResist));
+                logs.push(`💥 暴击伤害：${damage}`);
+            }
+
+            // 步骤4：防御抵消
+            damage = Math.max(damage - def.defense, 0);
+            def.hp -= damage;
+            logs.push(
+                `⚔️ 第${hitCount + 1}击伤害：${damage}`,
+                `🩸 ${target.account} 剩余HP：${def.hp}`
+            );
+
+            // 步骤5：吸血计算（向下取整）
+            if (damage > 0) {
+                const heal = Math.floor(
+                    damage * att.lifesteal * (1 + att.healBoost - def.healReduce)
+                );
+                att.hp += heal;
+                logs.push(`❤️‍🩹 ${attacker.account} 吸血+${heal}`);
+            }
+
+            // 步骤6：连击检测（固定概率）
+            if (Math.random() < att.combo) {
+                hitCount++;
+                logs.push(`🌀 连击继续（${hitCount}/${this.config.maxCombo}）`);
+            } else {
+                break;
+            }
+        }
+
+        // 步骤7：固定反击概率检测
+        const isCounter = Math.random() < def.counter && def.hp > 0;
+
+        return {
+            logs,
+            isCounter,
+            hitCount: hitCount < this.config.maxCombo ? 0 : hitCount
+        };
+    }
+
+    /** 生成速度日志 */
+    private static generateSpeedLog(a: Battle, b: Battle): string {
+        return a.attribute.sp > b.attribute.sp ?
+            `⚡ ${a.account} 先攻（速度 ${a.attribute.sp}）` :
+            `🛡️ ${b.account} 先攻（速度 ${b.attribute.sp}）`;
+    }
+}
+/**
+ * 回合制游戏房间管理模块 v2.3
+ * 完整注释版 | 基于Redis Hash的合并键实现
+ */
+import { Redis } from 'ioredis';
+import { KeyService } from 'rise_util/lib/src/enum/keyService';
+import { Battle } from '../sekiro/sekiro';
+
+// ======================== 类型定义 ========================
+
+/**
+ * 玩家操作记录类型
+ * @property playerId - 玩家唯一标识
+ * @property action - 操作指令内容（如"attack"）
+ * @property timestamp - 操作时间戳（毫秒级）
+ */
+interface PlayerAction {
+  userid: number;
+  action: string;
+  timestamp: number;
+}
+
+interface BattleAction {
+  //下个操作者
+  nextOperator: string,
+  text: string[],
+  //当前操作者
+  operator: string
+}
+interface BulkUpdate {
+  players?: Battle[];
+  enemies?: Battle[];
+}
+interface RemovalTargets {
+  players?: string[];
+  enemies?: string[];
+}
+
+/**
+ * 房间状态类型
+ * - waiting: 等待玩家加入阶段
+ * - playing: 游戏进行中
+ * - completed: 游戏已结束
+ */
+// export type RoomStatus = 'waiting' | 'playing' | 'completed';
+export enum RoomStatus {
+  waiting = 'waiting',
+  playing = 'playing',
+  completed = 'completed'
+}
+
+/**
+ * 房间基础信息接口
+ * @property status - 当前房间状态
+ * @property currentTurn - 当前回合序号（从0开始计数）
+ * @property maxPlayers - 房间最大玩家容量
+ * @property createdAt - 房间创建时间戳（毫秒）
+ */
+interface RoomInfo {
+  status: RoomStatus;
+  currentTurn: number;
+  maxPlayers: number;
+  maxEnemy: number;
+  createdAt: number;
+  players: [],
+  enemySide: [],
+  actions: BattleAction[],
+  type: RoomType
+  //userid 数组
+  attackSequence: string[]
+}
+export enum RoomType {
+  boss = 1,
+  user = 2,
+}
+
+// ======================== 核心类实现 ========================
+export class RoundRoomManager {
+  private readonly redis: Redis;
+  private readonly baseKey: string;
+
+  /**
+   * 初始化房间管理器
+   * @param redis - ioredis实例
+   * @param options 配置项
+   * @property roomTimeout 玩家超时时间（毫秒）
+   * @property maxPlayers 默认最大玩家数
+   * @property expireSeconds Redis数据过期时间（秒）
+   */
+  constructor(
+    redis: Redis,
+    private readonly options: {
+      roomTimeout: number;
+      maxPlayers: number;
+      maxEnemy: number;
+      expireSeconds: number;
+    } = {
+        roomTimeout: 60_000,   // 默认60秒无操作超时
+        maxPlayers: 2,         // 默认双人对战
+        maxEnemy: 2,
+        expireSeconds: 86_400  // 默认24小时过期86_400
+      }
+  ) {
+
+    // 生成基础Redis键前缀（例："game:room"）
+    this.baseKey = `${KeyService.REDISGLOALNAME}:room`;
+    this.redis = redis;
+  }
+
+  // ======================== 核心方法 ========================
+
+  /**
+   * 创建新房间
+   * @param maxPlayers 房间最大玩家容量（默认使用配置值）
+   * @returns 房间ID字符串
+   * @throws ROOM_CREATION_FAILED 当Redis操作失败时抛出
+   * 
+   * 实现逻辑：
+   * 1. 使用Redis原子计数器生成唯一房间ID
+   * 2. 初始化房间数据结构
+   * 3. 设置初始过期时间
+   */
+  async createRoom(maxPlayers: number = this.options.maxPlayers, maxEnemy: number = this.options.maxEnemy, type: RoomType): Promise<string> {
+    // 生成自增房间ID（原子操作）
+    const roomId = await this.redis.incr(`${this.baseKey}:id_counter`);
+    const roomKey = this.getRoomKey(roomId.toString());
+
+    try {
+      // 使用pipeline保证操作原子性
+      await this.redis
+        .pipeline()
+        // 初始化房间数据（Hash结构）
+        .hset(roomKey,
+          'status', 'waiting',        // 初始状态
+          'type', type,               //房间类型
+          'currentTurn', '0',        // 回合计数器
+          'maxPlayers', maxPlayers.toString(), // 最大玩家数
+          'maxEnemy', maxEnemy.toString(), // 最大对手数
+          'createdAt', Date.now().toString(), // 创建时间
+          'players', '[]',            // 玩家列表（JSON数组）
+          'actions', '[]',            // 操作记录（JSON数组）
+          'enemySide', '[]',          // 敌方记录（JSON数组）
+          'attackSequence', '[]',     //攻击顺序（JSON数组）(根据sp排列)
+          'lastActive', '{}'          // 最后活跃时间（JSON对象）
+        )
+        // 设置过期时间（秒）
+        .expire(roomKey, this.options.expireSeconds)
+        .exec();
+
+      return roomId.toString();
+    } catch (e) {
+      throw new RoomError('ROOM_CREATION_FAILED');
+    }
+  }
+
+  /**
+   * 加入房间（支持玩家/敌方阵营）
+   * @param direction 1-加入玩家阵营 2-加入敌方阵营
+   */
+  async joinRoom(
+    roomId: string,
+    player: Battle,
+    direction: 1 | 2
+  ): Promise<boolean> {
+    const roomKey = this.getRoomKey(roomId);
+
+    const luaScript = `
+      local key = KEYS[1]
+      local newMember = cjson.decode(ARGV[1])
+      local direction = tonumber(ARGV[2])
+      local expireSeconds = tonumber(ARGV[3])
+
+      -- 获取配置限制
+      local maxPlayers = tonumber(redis.call('HGET', key, 'maxPlayers'))
+      local maxEnemy = tonumber(redis.call('HGET', key, 'maxEnemy'))
+
+      -- 根据方向选择操作字段
+      local targetField = direction == 1 and 'players' or 'enemySide'
+      local maxLimit = direction == 1 and maxPlayers or maxEnemy
+
+      -- 获取现有成员列表
+      local members = cjson.decode(redis.call('HGET', key, targetField) or '[]')
+
+      -- ID存在性检查
+      for _, m in ipairs(members) do
+        if m.userid == newMember.userid then
+          return {err='MEMBER_ALREADY_EXISTS'}
+        end
+      end
+
+      -- 容量检查
+      if #members >= maxLimit then
+        return {err=targetField..'_FULL'}
+      end
+
+      -- 插入新成员
+      table.insert(members, newMember)
+      redis.call('HSET', key, targetField, cjson.encode(members))
+      redis.call('EXPIRE', key, expireSeconds)
+      return 1
+    `;
+
+    const result = await this.redis.eval(
+      luaScript,
+      1,
+      roomKey,
+      JSON.stringify(player),
+      direction,
+      this.options.expireSeconds.toString()
+    );
+
+    return this.parseLuaResult(result);
+  }
+  /**
+     * 生成战斗攻击顺序（按速度降序排列）
+     */
+  public async generateAttackSequence(roomId: string): Promise<void> {
+    const roomKey = this.getRoomKey(roomId);
+
+    // 使用Lua脚本保证原子性操作
+    const luaScript = `
+    local key = KEYS[1]
+    local players = cjson.decode(redis.call('HGET', key, 'players') or '[]')
+    local enemies = cjson.decode(redis.call('HGET', key, 'enemySide') or '[]')
+    
+    -- 合并双方单位
+    local allUnits = {}
+    for _, v in ipairs(players) do table.insert(allUnits, v) end
+    for _, v in ipairs(enemies) do table.insert(allUnits, v) end
+    
+    -- 按速度降序排序（速度相同按userid排序）
+    table.sort(allUnits, function(a, b) 
+      if a.attribute.sp == b.attribute.sp then
+        return a.userid < b.userid
+      end
+      return a.attribute.sp > b.attribute.sp
+    end)
+    
+    -- 提取排序后的userid列表
+    local sequence = {}
+    for _, v in ipairs(allUnits) do
+      table.insert(sequence, tostring(v.userid))
+    end
+    
+    redis.call('HSET', key, 
+      'attackSequence', cjson.encode(sequence),
+      'currentAttackIndex', 0  -- 重置当前攻击索引
+    )
+    return true
+  `;
+
+    await this.redis.eval(luaScript, 1, roomKey);
+  }
+  /**
+   * 批量更新成员信息（原子操作）
+   * @param roomId 房间ID
+   * @param updates 包含玩家和敌方的更新数据
+   * @returns 是否全部更新成功
+   * @throws MEMBER_NOT_FOUND 任意更新目标不存在时抛出
+   * 
+   * 性能优化点：
+   * 1. 单次Redis交互完成所有操作
+   * 2. 使用Hash表加速查找
+   * 3. 内存预分配优化
+   */
+  async bulkUpdateMembers(roomId: string, updates: BulkUpdate): Promise<boolean> {
+    const roomKey = this.getRoomKey(roomId);
+
+    const luaScript = `
+      local key = KEYS[1]
+      local playerUpdates = cjson.decode(ARGV[1]) or {}
+      local enemyUpdates = cjson.decode(ARGV[2]) or {}
+      local expireSeconds = tonumber(ARGV[3])
+
+      -- 创建查找表加速匹配
+      local function createLookup(arr)
+        local tbl = {}
+        for _, v in ipairs(arr) do
+          tbl[tostring(v.userid)] = v
+        end
+        return tbl
+      end
+
+      -- 批量处理更新
+      local function processUpdates(field, updates)
+        local members = cjson.decode(redis.call('HGET', key, field) or '[]')
+        local lookup = createLookup(updates)
+        local updated = false
+
+        -- 预分配内存（减少table重组次数）
+        local newMembers = {}
+        for _, m in ipairs(members) do
+          local uid = tostring(m.userid)
+          if lookup[uid] then
+            newMembers[#newMembers+1] = lookup[uid]
+            lookup[uid] = nil  -- 标记为已处理
+            updated = true
+          else
+            newMembers[#newMembers+1] = m
+          end
+        end
+
+        -- 检查未匹配的更新项
+        if next(lookup) ~= nil then
+          return false
+        end
+
+        if updated then
+          redis.call('HSET', key, field, cjson.encode(newMembers))
+        end
+        return true
+      end
+
+      -- 处理玩家更新
+      if not processUpdates('players', playerUpdates) then
+        return {err='PLAYER_NOT_FOUND'}
+      end
+
+      -- 处理敌方更新
+      if not processUpdates('enemySide', enemyUpdates) then
+        return {err='ENEMY_NOT_FOUND'}
+      end
+
+      redis.call('EXPIRE', key, expireSeconds)
+      return 1
+    `;
+
+    const result = await this.redis.eval(
+      luaScript,
+      1,
+      roomKey,
+      JSON.stringify(updates.players || []),
+      JSON.stringify(updates.enemies || []),
+      this.options.expireSeconds.toString()
+    );
+
+    return this.parseLuaResult(result);
+  }
+
+  /**
+   * 批量移除成员（原子操作）
+   * @param roomId 房间ID
+   * @param targets 包含玩家和敌方需要移除的ID列表
+   * @returns 是否全部移除成功
+   * @throws MEMBER_NOT_FOUND 任意目标不存在时抛出
+   */
+  async bulkRemoveMembers(roomId: string, targets: RemovalTargets): Promise<boolean> {
+    const roomKey = this.getRoomKey(roomId);
+
+    const luaScript = `
+      local key = KEYS[1]
+      local targetPlayers = cjson.decode(ARGV[1])
+      local targetEnemies = cjson.decode(ARGV[2])
+      local expireSeconds = tonumber(ARGV[3])
+
+      -- 创建查找表加速匹配
+      local function createIdSet(ids)
+        local set = {}
+        for _, id in ipairs(ids) do
+          set[tostring(id)] = true
+        end
+        return set
+      end
+
+      -- 批量移除处理器
+      local function processRemoval(field, targetIds)
+        if #targetIds == 0 then return true end
+        
+        local members = cjson.decode(redis.call('HGET', key, field) or '[]')
+        local idSet = createIdSet(targetIds)
+        local originalCount = #members
+        local newMembers = {}
+
+        -- 过滤保留项
+        for _, m in ipairs(members) do
+          if not idSet[tostring(m.userid)] then
+            table.insert(newMembers, m)
+          end
+        end
+
+        -- 检查实际移除数量
+        if (originalCount - #newMembers) ~= #targetIds then
+          return false
+        end
+
+        redis.call('HSET', key, field, cjson.encode(newMembers))
+        return true
+      end
+
+      -- 处理玩家移除
+      if not processRemoval('players', targetPlayers) then
+        return {err='PLAYER_NOT_FOUND'}
+      end
+
+      -- 处理敌方移除
+      if not processRemoval('enemySide', targetEnemies) then
+        return {err='ENEMY_NOT_FOUND'}
+      end
+
+      redis.call('EXPIRE', key, expireSeconds)
+      return 1
+    `;
+
+    const result = await this.redis.eval(
+      luaScript,
+      1,
+      roomKey,
+      JSON.stringify(targets.players || []),
+      JSON.stringify(targets.enemies || []),
+      this.options.expireSeconds.toString()
+    );
+
+    return this.parseLuaResult(result);
+  }
+  /**
+   * 提交回合操作（原子操作）
+   * @param roomId 房间ID
+   * @param playerId 玩家ID
+   * @param action 操作指令
+   * @returns 是否提交成功
+   * @throws NOT_YOUR_TURN 非当前玩家操作时抛出
+   * 
+   * 性能优化点：
+   * - 使用Lua脚本保证原子性
+   * - 控制操作记录长度（最多保留50条）
+   */
+  async submitAction(roomId: string, playerId: string, action: string): Promise<boolean> {
+    const roomKey = this.getRoomKey(roomId);
+
+    // Lua脚本（原子化操作）
+    const luaScript = `
+      --[[ 原子化提交操作脚本 ]]--
+      local key = KEYS[1]
+      local playerId = ARGV[1]
+      local actionData = ARGV[2]
+      local timestamp = tonumber(ARGV[3])
+      local expireSeconds = tonumber(ARGV[4])
+
+      -- 解析房间数据
+      local players = cjson.decode(redis.call('HGET', key, 'players') or '[]')
+      if #players == 0 then return {err='NO_PLAYERS'} end
+
+      -- 回合验证
+      local currentTurn = tonumber(redis.call('HGET', key, 'currentTurn'))
+      local expectedPlayer = players[(currentTurn % #players) + 1]
+      if expectedPlayer ~= playerId then
+        return {err='NOT_YOUR_TURN'}
+      end
+
+      -- 更新操作记录
+      local actions = cjson.decode(redis.call('HGET', key, 'actions') or '[]')
+      table.insert(actions, 1, {  -- 插入到列表头部
+        playerId = playerId,
+        action = actionData,
+        timestamp = timestamp
+      })
+
+      -- 控制记录长度（最多50条）
+      if #actions > 50 then
+        actions = {unpack(actions, 1, 50)}
+      end
+
+      -- 更新最后活跃时间
+      local lastActive = cjson.decode(redis.call('HGET', key, 'lastActive') or '{}')
+      lastActive[playerId] = timestamp
+
+      -- 保存数据
+      redis.call('HMSET', key,
+        'currentTurn', currentTurn + 1,
+        'actions', cjson.encode(actions),
+        'lastActive', cjson.encode(lastActive)
+      )
+      redis.call('EXPIRE', key, expireSeconds)
+      return 1
+    `;
+
+    const result = await this.redis.eval(
+      luaScript,
+      1,
+      roomKey,
+      playerId,
+      action,
+      Date.now().toString(),
+      this.options.expireSeconds.toString()
+    );
+
+    // 解析新返回值结构
+    const isSuccess = Array.isArray(result)
+      ? result.some(r => r === 1 || r?.[1] === 1)
+      : result === 1;
+
+    return isSuccess;
+  }
+
+  /**
+  * 修改房间状态（原子操作）
+  * @param roomId 房间ID
+  * @param newStatus 目标状态
+  * @param force 是否强制转换状态（默认false）
+  * @returns 是否修改成功
+  * @throws ROOM_NOT_FOUND | INVALID_STATUS_TRANSITION
+  * 
+  * 状态转换规则：
+  * waiting → playing → completed
+  * 强制模式可跳过规则校验
+  */
+  async updateRoomStatus(
+    roomId: string,
+    newStatus: RoomStatus,
+    force: boolean = false
+  ): Promise<boolean> {
+    const roomKey = this.getRoomKey(roomId);
+
+    const luaScript = `
+    local key = KEYS[1]
+    local targetStatus = ARGV[1]
+    local forceMode = ARGV[2] == 'true'
+    local expireSeconds = tonumber(ARGV[3])
+
+    -- 获取当前状态
+    local currentStatus = redis.call('HGET', key, 'status')
+    if not currentStatus then
+      return {err='ROOM_NOT_FOUND'}
+    end
+
+    -- 状态转换校验
+    if not forceMode then
+      local validTransitions = {
+        waiting = { playing = true },
+        playing = { completed = true },
+        completed = {}  -- 终态不可转出
+      }
+      
+      if not validTransitions[currentStatus][targetStatus] then
+        return {err='INVALID_STATUS_TRANSITION'}
+      end
+    end
+
+    -- 执行状态更新
+    redis.call('HSET', key, 'status', targetStatus)
+    redis.call('EXPIRE', key, expireSeconds)
+    return 1
+  `;
+
+    const result = await this.redis.eval(
+      luaScript,
+      1,
+      roomKey,
+      newStatus,
+      force.toString(),
+      this.options.expireSeconds.toString()
+    );
+
+    return this.parseLuaResult(result);
+  }
+  public async gameStart(roomid: string) {
+    await this.redis.setex(this.getRoomGameKey(roomid), 3, roomid)
+  }
+
+
+  /**
+   * 获取房间基础信息
+   * @param roomId 房间ID
+   * @returns 房间信息对象
+   * 
+   * 优化点：使用HMGET替代HGETALL，减少网络传输
+   */
+  async getRoomInfo(roomId: string): Promise<RoomInfo> {
+    const data = await this.redis.hmget(
+      this.getRoomKey(roomId),
+      'status', 'currentTurn', 'maxPlayers', 'createdAt', 'players', 'actions', 'maxEnemy', 'enemySide', 'type', 'attackSequence'
+    );
+
+    return {
+      status: data[0] as RoomStatus,
+      currentTurn: parseInt(data[1] || '0'),
+      maxPlayers: parseInt(data[2] || '0'),
+      createdAt: parseInt(data[3] || '0'),
+      players: JSON.parse(data[4] || '[]'),
+      actions: JSON.parse(data[5] || '[]'),
+      maxEnemy: parseInt(data[6] || '0'),
+      enemySide: JSON.parse(data[7] || '[]'),
+      type: JSON.parse(data[8] || '0'),
+      attackSequence: JSON.parse(data[9] || '[]'),
+    };
+  }
+
+
+
+  /**
+   * 获取最近操作记录
+   * @param roomId 房间ID
+   * @param count 获取的记录数量（默认10条）
+   * @returns 按时间倒序的操作记录数组
+   */
+  async getRecentActions(roomId: string, count: number = 10): Promise<PlayerAction[]> {
+    const actionsJson = await this.redis.hget(this.getRoomKey(roomId), 'actions');
+    const actions = JSON.parse(actionsJson || '[]') as PlayerAction[];
+    return actions.slice(0, Math.min(count, actions.length));
+  }
+
+
+
+  /**
+   * 生成房间主键
+   * @param roomId 房间ID
+   * @returns Redis键名（例："game:room:123"）
+   */
+  private getRoomKey(roomId: string): string {
+    return `${this.baseKey}:${roomId}`;
+  }
+
+
+  private getRoomGameKey(roomId: string): string {
+    return `${this.baseKey}:${roomId}:gameRoundRecord:${roomId}`;
+  }
+  private parseLuaResult(result: any): boolean {
+    // 统一处理Lua脚本返回结果
+    if (Array.isArray(result)) {
+      return result.some(r => r === 1 || r?.[1] === 1);
+    }
+    return result === 1;
+  }
+  /**
+   * 清理房间数据（调试用）
+   * @param roomId 房间ID
+   */
+  public async clearRoomData(roomId: string): Promise<void> {
+    await this.redis.del(this.getRoomKey(roomId));
+  }
+}
+
+// ======================== 错误处理 ========================
+export class RoomError extends Error {
+  /**
+   * 房间操作异常
+   * @param code 错误代码
+   * 
+   * 错误代码清单：
+   * - ROOM_NOT_FOUND: 房间不存在
+   * - ROOM_FULL: 房间已满员
+   * - ROOM_NOT_AVAILABLE: 房间不处于可操作状态
+   * - NOT_YOUR_TURN: 未到当前玩家回合
+   * - PLAYER_ALREADY_EXISTS: 玩家已存在
+   * - JOIN_FAILED: 加入操作失败
+   */
+  constructor(public code: string) {
+    super();
+    this.name = 'RoomError';
+
+    const errorMessages: Record<string, string> = {
+      ROOM_CREATION_FAILED: '房间创建失败',
+      ROOM_NOT_AVAILABLE: '房间不可用',
+      ROOM_FULL: '房间已满员',
+      PLAYER_ALREADY_EXISTS: '玩家已存在',
+      NOT_YOUR_TURN: '未到操作回合',
+      JOIN_FAILED: '加入失败',
+      NO_PLAYERS: '房间无玩家',
+      PLAYER_NOT_FOUND: '玩家不存在',
+      ENEMY_NOT_FOUND: '待更新敌方不存在'
+    };
+
+    this.message = errorMessages[code] || '未知错误';
+  }
+
+
+
+}
+/**
+ * 战斗流程处理起
+ */
+export class combatFlow {
+    //玩家请求来了。我现在要攻击attackered这个人。
+    //所有人都出手一次。则一个回合结束
+    public start(roomid: string, attackered?: string) {
+        //如果回合数为0.nextOperator为空。 找出roomid的玩家数据。根据speed(sp)排序。最高的先出手。相等的随便取。这就是出手顺序，并且把nextOperator设置为speed最高的玩家
+        //我会调用senduser去通知这个玩家出手
+
+        //再次调用nextOperator不为空的情况下。则为nextOperator这个字段的玩家执行战斗逻辑。写入。更新room. 然后找出下一个出手的玩家重置nextOperator等待下一次start调用
+        //如果回合数不为0找出 该回合的请求者则是 BattleAction 里面的nextOperator attackered则是nextOperator选择的攻击目标。
+        //一对一战斗结束过后。找出
+
+    }
+
+    //通知玩家应该出手了。通知玩家数据更新啦。我来处理。ai不用实现这部分的工作
+    public senduser(userid: string, data: any) {
+
+    }
+
+}
+

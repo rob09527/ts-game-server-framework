@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>游戏服务器连接测试</title>
+    <style>
+        body {
+            font-family: "Microsoft YaHei", sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .boss-buttons {
+            margin: 10px 0;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .boss-button {
+            padding: 8px 15px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .boss-button:hover {
+            background: #1976D2;
+        }
+
+        .status-box {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .user-info {
+            background: #e8f5e9;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 8px;
+            display: none;
+            justify-content: space-between;
+            border: 2px solid #c8e6c9;
+        }
+
+        .user-info span {
+            margin: 0 10px;
+            color: #2e7d32;
+        }
+
+        .disconnected {
+            background: #ffebee;
+            color: #c62828;
+            border: 2px solid #ffcdd2;
+        }
+
+        .connecting {
+            background: #fff3e0;
+            color: #ef6c00;
+            border: 2px solid #ffe0b2;
+        }
+
+        .connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 2px solid #c8e6c9;
+        }
+
+        .login-form {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #messages {
+            height: 300px;
+            border: 1px solid #eee;
+            padding: 15px;
+            background: white;
+            overflow-y: auto;
+            border-radius: 6px;
+            margin-top: 15px;
+        }
+
+        .message-item {
+            margin: 8px 0;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .test-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        .field-editor {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .field-input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .custom-fields {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+
+        .field-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 4px;
+        }
+
+        .test-buttons {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+
+        .json-tree {
+            padding-left: 20px;
+        }
+
+        .json-key {
+            color: #c41a16;
+        }
+
+        .json-value {
+            color: #1c00cf;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>游戏服务器连接器</h1>
+
+    <div class="login-form">
+        <h3>登录凭证</h3>
+        <input type="text" id="username" placeholder="用户名">
+        <input type="password" id="password" placeholder="密码">
+        <button onclick="handleLogin()" id="loginBtn">登录服务器</button>
+    </div>
+
+    <div class="user-info" id="userInfo">
+        <span>用户: <strong id="user-id"></strong></span>
+        <span>职业: <strong id="user-career"></strong></span>
+        <span>血量: <strong id="user-hp"></strong></span>
+        <span>能量: <strong id="user-sp"></strong></span>
+        <span>攻击力: <strong id="user-attack"></strong></span>
+    </div>
+
+    <div id="status" class="status-box disconnected">未连接</div>
+
+    <div class="test-panel" id="testPanel">
+        <h3>自定义测试数据 (支持嵌套结构)</h3>
+        <div class="field-editor">
+            <input type="text" id="fieldKey" placeholder="字段路径 (如 user.info.age)" class="field-input">
+            <input type="text" id="fieldValue" placeholder="字段值 (如 25 或 {data:{}})" class="field-input">
+            <button onclick="addCustomField()" class="boss-button">添加字段</button>
+        </div>
+
+        <div class="field-editor">
+            <input type="text" id="deleteKey" placeholder="输入要删除的字段路径" class="field-input">
+            <button onclick="removeField()" class="boss-button">删除字段</button>
+        </div>
+
+        <div class="custom-fields">
+            <div class="field-item header">
+                <span>当前数据结构</span>
+            </div>
+            <pre id="jsonPreview"></pre>
+        </div>
+
+        <div class="test-buttons">
+            <button onclick="sendTestData()" class="boss-button" id="sendTestBtn">发送测试数据</button>
+            <button onclick="clearTestData()" class="boss-button">清空所有数据</button>
+        </div>
+    </div>
+
+    <div id="messages"></div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <script>
+        let socket = null;
+        let isAuthenticated = false;
+        let reconnectAttempts = 0;
+        const MAX_RETRIES = 5;
+        let customData = {};
+
+        // 初始化Socket连接
+        function initSocketConnection() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+
+            socket = io('http://127.0.0.1:5300', {
+                transports: ['websocket'],
+                autoConnect: false,
+                auth: {
+                    userid: document.getElementById('username').value,
+                    token: document.getElementById('password').value,
+                }
+            });
+
+            setupSocketEvents();
+        }
+
+        // 设置Socket事件监听
+        function setupSocketEvents() {
+            socket.on('connect', handleConnect);
+            socket.on('disconnect', handleDisconnect);
+            socket.on('login', handleLoginResponse);
+            socket.on('userUpdate', handleUserUpdate);
+            socket.on('newMessage', handleTestResponse);
+        }
+
+        // 登录处理
+        function handleLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                addSystemMessage('请输入完整的登录凭证');
+                return;
+            }
+
+            toggleLoginButton(false);
+            initSocketConnection();
+            socket.connect();
+        }
+
+        // 登录响应处理
+        function handleLoginResponse(response) {
+            if (response.success) {
+                isAuthenticated = true;
+                socket.auth.token = response.token;
+                if (response.user) {
+                    updateUserInfo(response.user);
+                }
+                document.getElementById('userInfo').style.display = 'flex';
+                document.getElementById('testPanel').style.display = 'block';
+                updateStatus('connected', `已认证连接 (${socket.id})`);
+                enableChatFeatures(true);
+                addSystemMessage('认证成功，欢迎进入游戏世界！');
+                reconnectAttempts = 0;
+            } else {
+                addSystemMessage(`登录失败: ${response.message}`);
+                socket.disconnect();
+                document.getElementById('userInfo').style.display = 'none';
+                document.getElementById('testPanel').style.display = 'none';
+            }
+            toggleLoginButton(true);
+        }
+
+        // 用户信息更新
+        function updateUserInfo(userData) {
+            document.getElementById('user-id').textContent = userData.userid;
+            if (userData.career) {
+                document.getElementById('user-career').textContent = userData.career.career;
+                document.getElementById('user-hp').textContent = userData.career.hp;
+                document.getElementById('user-sp').textContent = userData.career.sp;
+                document.getElementById('user-attack').textContent = userData.career.attack;
+            }
+
+        }
+
+        // 连接状态处理
+        function handleConnect() {
+            updateStatus('connecting', '正在验证身份...');
+            addSystemMessage('传输层连接建立，正在验证凭证');
+        }
+
+        function handleDisconnect(reason) {
+            isAuthenticated = false;
+            updateStatus('disconnected', '连接已断开');
+            document.getElementById('userInfo').style.display = 'none';
+            document.getElementById('testPanel').style.display = 'none';
+            addSystemMessage(`连接断开，原因: ${reason}`);
+
+            if (reconnectAttempts < MAX_RETRIES) {
+                setTimeout(() => {
+                    reconnectAttempts++;
+                    addSystemMessage(`尝试自动重连 (${reconnectAttempts}/${MAX_RETRIES})`);
+                    socket.connect();
+                }, 3000);
+            }
+        }
+
+        // 嵌套数据结构操作
+        function setNestedValue(obj, path, value) {
+            const keys = path.split('.');
+            let current = obj;
+            for (let i = 0; i < keys.length - 1; i++) {
+                const key = keys[i];
+                if (!current[key]) current[key] = {};
+                current = current[key];
+            }
+            current[keys[keys.length - 1]] = value;
+        }
+
+        function deleteNestedValue(obj, path) {
+            const keys = path.split('.');
+            let current = obj;
+            for (let i = 0; i < keys.length - 1; i++) {
+                const key = keys[i];
+                if (!current[key]) return;
+                current = current[key];
+            }
+            delete current[keys[keys.length - 1]];
+        }
+
+        // 添加字段
+        function addCustomField() {
+            const keyInput = document.getElementById('fieldKey');
+            const valueInput = document.getElementById('fieldValue');
+
+            const path = keyInput.value.trim();
+            const rawValue = valueInput.value.trim();
+
+            if (!path) {
+                alert('字段路径不能为空');
+                return;
+            }
+
+            // 转换值类型
+            let value;
+            try {
+                value = JSON.parse(rawValue);
+            } catch (e) {
+                if (rawValue === 'true') value = true;
+                else if (rawValue === 'false') value = false;
+                else if (!isNaN(rawValue)) value = Number(rawValue);
+                else value = rawValue;
+            }
+
+            setNestedValue(customData, path, value);
+            refreshDataPreview();
+
+            keyInput.value = '';
+            valueInput.value = '';
+        }
+
+        // 删除字段
+        function removeField() {
+            const path = document.getElementById('deleteKey').value.trim();
+            if (!path) {
+                alert('请输入要删除的字段路径');
+                return;
+            }
+
+            deleteNestedValue(customData, path);
+            refreshDataPreview();
+            document.getElementById('deleteKey').value = '';
+        }
+
+        // 清空数据
+        function clearTestData() {
+            customData = {};
+            refreshDataPreview();
+        }
+
+        // 刷新预览
+        function refreshDataPreview() {
+            const preview = document.getElementById('jsonPreview');
+            preview.innerHTML = syntaxHighlight(JSON.stringify(customData, null, 2));
+        }
+
+        // JSON语法高亮
+        function syntaxHighlight(json) {
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+                function (match) {
+                    let cls = 'json-value';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) {
+                            cls = 'json-key';
+                        } else {
+                            cls = 'json-string';
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'json-boolean';
+                    } else if (/null/.test(match)) {
+                        cls = 'json-null';
+                    }
+                    return '<span class="' + cls + '">' + match + '</span>';
+                });
+        }
+
+        // 发送测试数据
+        function sendTestData() {
+            if (Object.keys(customData).length === 0) {
+                addSystemMessage('请先添加测试数据');
+                return;
+            }
+
+            const payload = {
+                type: 'nestedTest',
+                timestamp: new Date().toISOString(),
+                data: customData
+            };
+
+            socket.emit('chatMessage', customData);
+            addMessage(`发送嵌套数据: <pre>${JSON.stringify(payload, null, 2)}</pre>`);
+        }
+
+        // 处理测试响应
+        function handleTestResponse(response) {
+            addMessage(`服务器响应: <pre>${syntaxHighlight(JSON.stringify(response, null, 2))}</pre>`);
+        }
+
+        // 通用功能函数
+        function updateStatus(status, text) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `${status} status-box`;
+            statusDiv.textContent = text;
+        }
+
+        function addSystemMessage(text) {
+            addMessage(`系统: ${text}`, true);
+        }
+
+        function addMessage(text, isSystem = false) {
+            const messagesDiv = document.getElementById('messages');
+            const p = document.createElement('div');
+            p.className = 'message-item' + (isSystem ? ' system-message' : '');
+            p.innerHTML = `
+                <span class="time">[${new Date().toLocaleTimeString()}]</span>
+                <span class="content">${text}</span>
+            `;
+            messagesDiv.appendChild(p);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function toggleLoginButton(enable) {
+            const btn = document.getElementById('loginBtn');
+            btn.disabled = !enable;
+            btn.textContent = enable ? '登录服务器' : '正在连接...';
+        }
+
+        // 用户更新处理
+        function handleUserUpdate(userData) {
+            updateUserInfo(userData);
+            addSystemMessage('角色状态已更新');
+        }
+    </script>
+</body>
+
+</html>

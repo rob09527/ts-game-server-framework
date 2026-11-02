@@ -1,0 +1,28 @@
+{
+  "name": "rise_util",
+  "version": "1.0.71",
+  "description": "rob's personal toolkit",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "dependencies": {
+    "@types/node-schedule": "^2.1.7",
+    "ioredis": "^5.4.1",
+    "log4js": "^6.9.1",
+    "node-schedule": "^2.1.1",
+    "uuid": "^11.1.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "clean": "find . -type f \\( -name '*.js' -o -name '*.map' \\) -not -path './node_modules/*' -delete",
+    "pub": "npm publish",
+    "link": "npm link"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node-schedule": "^2.1.7",
+    "ts-node": "^10.9.2",
+    "tslib": "^2.8.1",
+    "typescript": "^5.4.5"
+  }
+}

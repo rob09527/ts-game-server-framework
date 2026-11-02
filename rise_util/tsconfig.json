@@ -1,0 +1,64 @@
+{
+    "compilerOptions": {
+        "target": "es5", /* 指定ECMAScript目标版本：'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019', 'ES2020', 'ES2021', or 'ESNEXT'. */
+        "module": "commonjs", /* 指定使用哪个模块系统来组织代码：'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', 'ES2020', or 'ESNEXT'. */
+        "strict": true, /* 启用所有严格类型检查选项。 */
+        "skipLibCheck": true, /* 跳过声明文件的类型检查。 */
+        "forceConsistentCasingInFileNames": true, /* 禁用由于大小写不匹配而导致的文件解析错误。 */
+        "sourceMap": true, /* 生成相应的`.map`文件。 */
+        "outDir": "lib", /* 将结构化的输出重定向到目录。 */
+        "rootDir": "./", /* 使用此根目录作为输入文件的根目录；使用此选项可将输入文件从输出目录中分离出来。 */
+        "noImplicitAny": true, /* 在表达式和声明上有隐含的'any'类型时报错。 */
+        "strictNullChecks": true, /* 启用严格的null检查。 */
+        "strictFunctionTypes": true, /* 启用严格的函数类型检查。 */
+        "strictBindCallApply": true, /* 启用严格的bind, call, 和 apply方法检查。 */
+        "strictPropertyInitialization": false, /* 检查类属性的初始化。 */
+        "noUnusedLocals": true, /* 报告未使用的本地变量。 */
+        "noUnusedParameters": true, /* 报告未使用的参数。 */
+        "noImplicitReturns": true, /* 并不是所有函数都有返回值时报告错误。 */
+        "noFallthroughCasesInSwitch": true, /* 报告switch语句的fallthrough错误。 */
+        "lib": [
+            "dom",
+            "dom.iterable",
+            "esnext"
+        ], /* 指定要包含在编译中的库文件列表。 */
+        "types": [], /* 类型声明文件列表要包含在编译中。 */
+        "allowJs": false, /* 允许JavaScript文件作为输入。 */
+        "checkJs": false, /* 对JavaScript文件启用类型检查。 */
+        "jsx": "react", /* 指定JSX代码的生成：'preserve', 'react-native', 'react', 'react-jsx' 或 'react-jsxdev'。 */
+        "experimentalDecorators": true, /* 启用实验性的ES装饰器。 */
+        "emitDecoratorMetadata": true, /* 为装饰器提供元数据支持。 */
+        "moduleResolution": "node", /* 选择模块解析策略：'node' (Node.js) 或 'classic' (TypeScript pre-1.6)。 */
+        "baseUrl": ".", /* 解析非相对模块名的基准目录。 */
+        "paths": {}, /* 将模块名映射到基于baseUrl的相对路径。 */
+        "rootDirs": [], /* 允许将多个目录作为编译上下文的一部分，这类似于将它们的文件全部放在单个目录中。 */
+        "typeRoots": [], /* 包含类型声明的文件列表。 */
+        "resolveJsonModule": true, /* 允许从.json文件导入模块。 */
+        "isolatedModules": true, /* 将每个文件作为单独的模块（与 'transpileOnly' 选项一起用于babel）。 */
+        "noEmit": false, /* 不生成输出文件。 */
+        "importHelpers": true, /* 从tslib导入辅助工具函数（比如__extends，__assign，__rest等）。 */
+        "downlevelIteration": true, /* 提供完整的支持for-of，展开操作符，等等。 */
+        "preserveSymlinks": true, /* 不解析和跟随符号链接。 */
+        "allowSyntheticDefaultImports": true, /* 允许从没有设置默认导出的模块中默认导入。 */
+        "esModuleInterop": true, /* 允许默认导入使用CommonJS模块。这允许合成默认导入，就像type="module"的脚本一样。 */
+        "incremental": true, /* 启用增量编译。 */
+        //"tsBuildInfoFile": "./.tsbuildinfo", /* 指定一个文件来存储增量编译信息。 */
+        "disableSizeLimit": true, /* 不编译大文件，并显示一个错误。 */
+        "preserveConstEnums": true, /* 不删除const枚举声明。 */
+        // "declarationDir": "./dist/types", /* 生成声明文件的输出目录。 */
+        "removeComments": true, /* 不在输出文件中保留注释。 */
+        "noEmitHelpers": true, /* 不在输出文件中包含辅助函数代码。 */
+        "declaration": true,
+        // "importWorkers": true, /* 允许使用Web Workers来改进类型检查和语言服务的性能。 */
+        //"strictModeOptions": true /* 启用所有严格类型检查选项。 */
+        // ... 其他编译选项
+    },
+    "include": [
+        "src/**/*.ts",
+        "index.ts",
+    ],
+    "exclude": [
+        "node_modules",
+        "**/*.spec.ts"
+    ],
+}

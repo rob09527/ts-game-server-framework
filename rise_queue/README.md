@@ -1,0 +1,1 @@
+rob's message queue template
